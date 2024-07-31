@@ -1,0 +1,44 @@
+<?php
+/*
+Type of Inbox
+'visitProfile',
+'sendingMessage',
+'likedMessage',
+'reportingAccount',
+'reportingServer',
+'reportedAccount',
+'reportedServer',
+'warningServer',
+'warningAccount',
+'bannedFromServer',
+'kickedFromServer',
+'suspendAccount',
+'suspendServer',
+'requestToJoinServer', *
+'joinedServer',
+'leavingServer',
+'easterEgg'
+
+*/
+class Inbox
+{
+    public function getAllInbox($userId)
+    {
+        global $db;
+
+        $query = $db->query("SELECT * FROM inbox WHERE to_id = '$userId'");
+        return $query->fetch_assoc();
+    }
+
+
+    public function inboxRequestToJoinServer($from, $to, $serverId)
+    {
+        global $db;
+
+        $type = 'requestToJoinServer';
+        $time = date("Y:m:d H:i:s");
+
+        $db->query("INSERT INTO inbox(from_id, to_id, server_id, type, created_at) VALUES('$from','$to','$serverId','$type','$time')");
+        return 1;
+    }
+}

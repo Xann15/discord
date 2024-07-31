@@ -1,0 +1,232 @@
+<?php
+
+
+class Server
+{
+    public function createServer()
+    {
+        global $db;
+
+        $serverName = mysqli_real_escape_string($db, $_POST['serverName']);
+        $description = mysqli_real_escape_string($db, $_POST['description']);
+        $time = date("d/m/Y");
+
+        if (isset($_POST["visibility"])) {
+            $selectedVisibility = $_POST["visibility"];
+            if ($selectedVisibility == "private") {
+                $visibility = "private";
+            } elseif ($selectedVisibility == "public") {
+                $visibility = "public";
+            }
+        } else {
+            $visibility = "public";
+        }
+
+        //? check serverName
+        if ($this->serverNameAvailable($serverName) > 0) {
+            $_SESSION['process'] = [
+                "status" => "failed",
+                "title" => "Failed,",
+                "content" => "the name (" . $serverName . ") is already in use, try another name!"
+            ];
+            return 0;
+        }
+
+        //? check data is complete or no
+        if ($this->isCompleteCreateServer($serverName) == 0) {
+            $_SESSION['process'] = [
+                "status" => "failed",
+                "title" => "Failed,",
+                "content" => "please complete all the data"
+            ];
+            return 0;
+        }
+
+        $decryptUserId = decryptData($_SESSION['app_login']);
+
+        //! Create Server
+        $db->query("INSERT INTO servers(created_by, server_name, server_description, server_visibility, created_at) VALUES('$decryptUserId', '$serverName', '$description', '$visibility', '$time')");
+
+        //! Create Server Link
+        $getServer = $this->getServer($serverName);
+        $serverId = $getServer['server_id'];
+        $this->generateServerLink($serverId);
+        $this->generateServerCode($serverId);
+
+        //! Create SelfMember
+        $this->joinServer($serverId, $decryptUserId);
+
+        $_SESSION['process'] = [
+            "status" => "success",
+            "title" => "Successfuly",
+            "content" => "created a server [ " . $serverName . " ]."
+        ];
+        return 1;
+    }
+
+    public function isCompleteCreateServer($serverName)
+    {
+
+        // Menghapus spasi dari string
+        $serverName = str_replace(' ', '', $serverName);
+
+        // Menghitung panjang string tanpa spasi
+        $lengthserverName = strlen($serverName);
+
+        return $lengthserverName < 1 ? 0 : 1;
+    }
+
+    public function serverNameAvailable($serverName)
+    {
+        global $db;
+
+        $isAvailabe = $db->query("SELECT server_name FROM servers WHERE server_name = '$serverName'");
+        return $isAvailabe->num_rows;
+    }
+
+    public function getServer($serverName)
+    {
+        global $db;
+
+        $query = $db->query("SELECT * FROM servers WHERE server_name = '$serverName'");
+
+        return $query->fetch_assoc();
+    }
+
+    public function getServerById($serverId)
+    {
+        global $db;
+
+        $query = $db->query("SELECT * FROM servers WHERE server_id = '$serverId'");
+
+        return $query->fetch_assoc();
+    }
+
+    public function getAllServer()
+    {
+        global $db;
+
+        $query = $db->query("SELECT * FROM servers ORDER by server_name ASC");
+
+        return $query;
+    }
+
+    public function generateServerLink($serverId)
+    {
+        global $db;
+
+        $link = "";
+
+        while (true) {
+            $link = strtoupper(substr(md5(rand()), 0, 8)); // Menghasilkan kode acak 8 karakter
+
+            // Periksa apakah kode sudah ada dalam database
+            $query = "SELECT COUNT(*) as count FROM server_link WHERE link = '$link'";
+            $result = $db->query($query);
+
+            $row = $result->fetch_assoc();
+
+            if ($row['count'] == 0) {
+                // Kode unik ditemukan, simpan ke database
+                $insertQuery = "INSERT INTO server_link (server_id, link) VALUES ('$serverId', '$link')";
+                $db->query($insertQuery);
+
+                break;
+            }
+        }
+
+        return 1;
+    }
+
+    public function generateServerCode($serverId)
+    {
+        global $db;
+
+        $code = "";
+
+        while (true) {
+            $code = str_pad(rand(0, 99999), 5, '0', STR_PAD_LEFT); // Menghasilkan kode acak 5 angka
+
+            // Periksa apakah kode sudah ada dalam database
+            $query = "SELECT COUNT(*) as count FROM server_code WHERE code = '$code'";
+            $result = $db->query($query);
+
+            $row = $result->fetch_assoc();
+
+            if ($row['count'] == 0) {
+                // Kode unik ditemukan, simpan ke database
+                $insertQuery = "INSERT INTO server_code (server_id, code) VALUES ('$serverId', '$code')";
+                $db->query($insertQuery);
+
+                break;
+            }
+        }
+
+        return 1;
+    }
+
+
+    public function getServerLink($serverId)
+    {
+        global $db;
+
+        $query = $db->query("SELECT * FROM server_link WHERE server_id = '$serverId'");
+        return $query->fetch_assoc();
+    }
+
+    public function getServerCode($serverId)
+    {
+        global $db;
+
+        $query = $db->query("SELECT * FROM server_code WHERE server_id = '$serverId'");
+        return $query->fetch_assoc();
+    }
+
+    public function joinServer($serverId, $memberId)
+    {
+        global $db;
+
+        $db->query("INSERT INTO server_members(server_id, member_id) VALUES('$serverId', '$memberId')");
+        return 1;
+    }
+
+    public function getTotalMember($serverId)
+    {
+        global $db;
+
+        $query = $db->query("SELECT * FROM server_members WHERE server_id = '$serverId'");
+        return $query->num_rows;
+    }
+
+    public function requestToJoinServer($serverId, $userId, $reason)
+    {
+        global $db;
+
+        $reason = mysqli_real_escape_string($db, $reason);
+        $time = date("Y:m:d H:i:s");
+
+        $getServer = $this->getServerById($serverId);
+
+        $serverOwnerId = $getServer['created_by'];
+
+        $this->inboxRequestToJoinServer($userId, $serverOwnerId, $serverId);
+
+        $isHasSent = $db->query("SELECT * FROM request_to_join_server WHERE server_id = '$serverId' AND user_id = '$userId'");
+
+        if ($isHasSent->num_rows >= 3) {
+            $_SESSION['process'] = [
+                "status" => "failed",
+                "title" => "Unable to send,",
+                "content" => "you have exceeded the 3 request limit."
+            ];
+            return 0;
+        } elseif ($isHasSent->num_rows <= 3) {
+            $_SESSION['process'] = [
+                "status" => "success",
+                "title" => "Successfuly",
+                "content" => "submitted request to join."
+            ];
+            $db->query("INSERT INTO request_to_join_server(server_id, user_id, reason, created_at) VALUES('$serverId', '$userId', '$reason', '$time')");
+        }
+    }
+}

@@ -1,0 +1,40 @@
+<?php
+session_start();
+require "../init.php";
+
+if (!isset($_SESSION['app_login'])) {
+    header("Location: " . BASEURL . "/login");
+    exit;
+}
+
+$decryptedUserId = decryptData($_SESSION['app_login']);
+
+if (isset($_GET['v'])) {
+    $serverLink = $_GET['v'];
+} else {
+    $serverLink = "";
+}
+
+$getServerByLink = $db->query("
+    SELECT S.*
+    FROM server_link L
+    INNER JOIN servers S ON L.server_id = S.server_id
+    WHERE L.link = '$serverLink'
+");
+
+$fetchGroup = $getServerByLink->fetch_assoc();
+$groupId = $fetchGroup['server_id'];
+$title = "Group | " . $fetchGroup['server_name'];
+
+$isValidMember = $db->query("SELECT * FROM server_members WHERE server_id = '$groupId' AND member_id = '$decryptedUserId'");
+
+if ($isValidMember->num_rows < 1) {
+    header("Location: " . BASEURL . "/aboutServers/?v=$serverLink");
+    exit;
+}
+?>
+
+
+<?php require "../components/head.php"; ?>
+
+<?php require "../components/foot.php"; ?>
